@@ -13,31 +13,50 @@
 std::vector<uint8_t> generate_circle(int w, int h) {
     std::vector<uint8_t> img(w * h, 0);  // Инициализируем чёрным фоном
 
-    // Центр круга (в пиксельных координатах)
-    float cx = (w - 1) * 0.5f;
-    float cy = (h - 1) * 0.5f;
+    // Центр круга
+    int cx = (w - 1) / 2;
+    int cy = (h - 1) / 2;
 
-    // Радиус круга (45% от меньшей стороны)
-    float r = std::min(w, h) * 0.45f;
+    // Радиус круга
+    int r = (std::min(w, h) * 45) / 100;
+    int r_sq = r * r;
+
+    const int SCALE = 1000;   // Масштаб для фиксированной точки
 
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            // Расстояние от центра до текущего пикселя
-            float dx = x - cx;
-            float dy = y - cy;
-            float dist = std::sqrt(dx * dx + dy * dy);
+            //
+            int dx = x - cx;
+            int dy = y - cy;
+            int dist_sq = dx * dx + dy * dy;
 
-            // Нормируем расстояние: t = 0 в центре, t = 1 на границе круга
-            float t = dist / r;
+            if (dist_sq <= r_sq) {  // Только внутри круга
+                int dist = 0;
+                if (dist_sq > 0) {
+                    // Простое приближение sqrt через бинарный поиск
+                    int low = 0, high = r;
+                    while (low <= high) {
+                        int mid = (low + high) / 2;
+                        if (mid * mid <= dist_sq) {
+                            dist = mid;
+                            low = mid + 1;
+                        } else {
+                            high = mid - 1;
+                        }
+                    }
+                }
 
-            if (t <= 1.0f) {  // Только внутри круга
-                // Плавный косинусоидальный профиль яркости
-                // cos(0) = 1 (ярко в центре), cos(π/2) = 0 (темно на краю)
-                float v = std::cos(t * 3.14159265f * 0.5f);
-                if (v < 0.f) v = 0.f;  // На всякий случай обрезаем отрицательные
+                int t = (dist * SCALE) / r;
 
-                // Преобразуем в диапазон 0-255
-                img[y * w + x] = static_cast<uint8_t>(std::round(255.f * v));
+                // Приближение косинуса
+                // Используем приближение: cos(π/2 * t) ≈ 1 - t^2 для t в [0,1]
+                int t_norm = t;
+                int t_sq = (t_norm * t_norm) / SCALE;
+                int v_scaled = SCALE - t_sq;
+                if (v_scaled < 0) v_scaled = 0;
+
+                int pixel_value = (v_scaled * 255 + SCALE/2) / SCALE;
+                img[y * w + x] = static_cast<uint8_t>(pixel_value);
             }
             // За пределами круга остаётся 0 (чёрный фон)
         }
@@ -45,15 +64,17 @@ std::vector<uint8_t> generate_circle(int w, int h) {
     return img;
 }
 
-/// Генерация тестовых изображений
 
+/// Генерация тестовых изображений
 
 std::vector<uint8_t> generate_gradient_diagonal(int w, int h) {
     std::vector<uint8_t> img(w * h);
+    int max_sum = (w - 1) + (h - 1);
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            float t = (x + y) / float((w - 1) + (h - 1));
-            img[y * w + x] = static_cast<uint8_t>(std::round(255.f * t));
+            int sum = x + y;
+            int pixel_value = (sum * 255 + max_sum/2) / max_sum;
+            img[y * w + x] = static_cast<uint8_t>(pixel_value);
         }
     }
     return img;
@@ -63,8 +84,8 @@ std::vector<uint8_t> generate_gradient_horizontal(int w, int h) {
     std::vector<uint8_t> img(w * h);
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            float t = x / float(w - 1);
-            img[y * w + x] = static_cast<uint8_t>(std::round(255.f * t));
+            int pixel_value = (x * 255 + (w-1)/2) / (w-1);
+            img[y * w + x] = static_cast<uint8_t>(pixel_value);
         }
     }
     return img;
@@ -73,20 +94,50 @@ std::vector<uint8_t> generate_gradient_horizontal(int w, int h) {
 // Радиальный градиент: от белого в центре к чёрному по краям
 std::vector<uint8_t> generate_gradient_radial(int w, int h) {
     std::vector<uint8_t> img(w * h);
-    float cx = (w - 1) * 0.5f;
-    float cy = (h - 1) * 0.5f;
-    float max_dist = std::sqrt(cx * cx + cy * cy);  // Расстояние до угла
+    int cx = (w - 1) / 2;
+    int cy = (h - 1) / 2;
+
+    int max_dist_sq = cx * cx + cy * cy;
+    int max_dist = 0;
+
+    if (max_dist_sq > 0) {
+        int low = 0, high = std::max(w, h);
+        while (low <= high) {
+            int mid = (low + high) / 2;
+            if (mid * mid <= max_dist_sq) {
+                max_dist = mid;
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
+        }
+    }
 
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            float dx = x - cx;
-            float dy = y - cy;
-            float dist = std::sqrt(dx * dx + dy * dy);
-            float t = dist / max_dist;  // 0 в центре, ~1 на краях
-            if (t > 1.0f) t = 1.0f;
+            int dx = x - cx;
+            int dy = y - cy;
+            int dist_sq = dx * dx + dy * dy;
+            int dist = 0;
 
-            // Инвертируем: 1 в центре → 0 на краях
-            img[y * w + x] = static_cast<uint8_t>(std::round(255.f * (1.0f - t)));
+            // Приближенное вычисление sqrt
+            if (dist_sq > 0) {
+                int low = 0, high = max_dist;
+                while (low <= high) {
+                    int mid = (low + high) / 2;
+                    if (mid * mid <= dist_sq) {
+                        dist = mid;
+                        low = mid + 1;
+                    } else {
+                        high = mid - 1;
+                    }
+                }
+            }
+
+            int t = (dist * 255) / max_dist;  // 0 в центре, 255 на краях
+            if (t > 255) t = 255;
+
+            img[y * w + x] = static_cast<uint8_t>(255 - t);
         }
     }
     return img;
@@ -96,17 +147,49 @@ std::vector<uint8_t> generate_gradient_radial(int w, int h) {
 // Радиальная альфа-маска: 0 в центре, 255 на краях
 std::vector<uint8_t> generate_alpha_radial(int w, int h) {
     std::vector<uint8_t> img(w * h);
-    float cx = (w - 1) * 0.5f;
-    float cy = (h - 1) * 0.5f;
-    float r = std::sqrt(cx * cx + cy * cy);  // Максимальное расстояние до угла
+    int cx = (w - 1) / 2;
+    int cy = (h - 1) / 2;
+
+    // Максимальное расстояние до угла
+    int max_dist_sq = cx * cx + cy * cy;
+    int max_dist = 0;
+
+    if (max_dist_sq > 0) {
+        int low = 0, high = std::max(w, h);
+        while (low <= high) {
+            int mid = (low + high) / 2;
+            if (mid * mid <= max_dist_sq) {
+                max_dist = mid;
+                low = mid + 1;
+            } else {
+                high = mid - 1;
+            }
+        }
+    }
 
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {
-            float dx = x - cx;
-            float dy = y - cy;
-            float t = std::sqrt(dx * dx + dy * dy) / r;  // 0..~1
-            if (t > 1.f) t = 1.f;  // Обрезаем выход за пределы
-            img[y * w + x] = static_cast<uint8_t>(std::round(255.f * t));
+            int dx = x - cx;
+            int dy = y - cy;
+            int dist_sq = dx * dx + dy * dy;
+            int dist = 0;
+
+            if (dist_sq > 0) {
+                int low = 0, high = max_dist;
+                while (low <= high) {
+                    int mid = (low + high) / 2;
+                    if (mid * mid <= dist_sq) {
+                        dist = mid;
+                        low = mid + 1;
+                    } else {
+                        high = mid - 1;
+                    }
+                }
+            }
+
+            int t = (dist * 255) / max_dist;
+            if (t > 255) t = 255;
+            img[y * w + x] = static_cast<uint8_t>(t);
         }
     }
     return img;
@@ -350,24 +433,24 @@ void apply_circle_mask_to_image(const char* input_path, const char* output_path)
         read_png_gray8(input_path, img, w, h);
         std::cout << "Read image: " << w << "x" << h << "\n";
 
-        // Создаём круглую маску того же размера
-        std::vector<uint8_t> mask(w * h, 0);  // Инициализируем чёрным (0)
+        std::vector<uint8_t> mask(w * h, 0);
 
-        // Центр круга
-        float cx = (w - 1) * 0.5f;
-        float cy = (h - 1) * 0.5f;
-
-        float r = std::min(w, h) * 0.45f;
+        int cx2 = w - 1;  // cx * 2
+        int cy2 = h - 1;  // cy * 2
+        int r = (std::min(w, h) * 9) / 20;
+        int r_squared = r * r;
 
         // Заполняем маску: 255 внутри круга, 0 снаружи
         for (int y = 0; y < h; ++y) {
             for (int x = 0; x < w; ++x) {
-                float dx = x - cx;
-                float dy = y - cy;
-                float dist = std::sqrt(dx * dx + dy * dy);
+                int dx2 = 2 * x - cx2;
+                int dy2 = 2 * y - cy2;
 
-                if (dist <= r) {
-                    mask[y * w + x] = 255;  // Белый внутри круга
+                int dist_squared_times_4 = dx2 * dx2 + dy2 * dy2;
+
+                // Сравниваем: dist^2 <= r^2
+                if (dist_squared_times_4 <= r_squared * 4) {
+                    mask[y * w + x] = 255;
                 }
                 // Снаружи остаётся 0 (чёрный)
             }
@@ -389,6 +472,7 @@ void apply_circle_mask_to_image(const char* input_path, const char* output_path)
         throw;
     }
 }
+
 
 /// ЗАДАНИЕ 1: Круглое полутоновое изображение
 void task1_generating_halftone_circle() {
@@ -551,12 +635,54 @@ void task2_blending_non_synthetic_images() {
     write_png_gray8(images_for_blending_paths_output[2], blended_image3, w3, h3);
 }
 
+// ДОБАВЛЕНО
+void task2_blending_images_with_input_mask() {
+    const char* images_for_blending_paths_input[] = {
+            "image1_for_blending.png",
+            "image2_for_blending.png",
+            "image3_for_blending.png"
+    };
+
+    const char* images_for_blending_paths_output[] = {
+            "output_image1_for_blending_input_mask.png",
+            "output_image2_for_blending_input_mask.png",
+            "output_image3_for_blending_input_mask.png"
+    };
+
+    // Сделаем так: смешиваем два изображения, используя третье как маску.
+    // Будем проверять, что все изображения на входе имеют одинаковый размер. Если нет - то смешивание запрещается
+    // (А как иначе проводить смешивание? Обрезанием изображений?)
+
+    std::vector<uint8_t> image1_for_blending;
+    std::vector<uint8_t> image2_for_blending;
+    std::vector<uint8_t> image3_for_blending;
+
+    int w1 = 0, h1 = 0, w2 = 0, h2 = 0, w3 = 0, h3 = 0;
+    read_png_gray8(images_for_blending_paths_input[0], image1_for_blending, w1, h1);
+    read_png_gray8(images_for_blending_paths_input[1], image2_for_blending, w2, h2);
+    read_png_gray8(images_for_blending_paths_input[2], image3_for_blending, w3, h3);
+
+    // Проверяем размеры (должно быть w1 = w2 = w3; h1 = h2 = h3). Правильнее было бы при каждом смешивании делать такую проверку,
+    // но так как мы каждый раз просто выбираем маску из трех поступивших изображений, то в нашем случае она будет излишней
+    checkIfSizesEquals(w1, h1, w2, h2, w3, h3);
+
+    auto blended_image1 = blend_gray8(image1_for_blending, image2_for_blending, image3_for_blending, w1, h1);
+    auto blended_image2 = blend_gray8(image2_for_blending, image3_for_blending, image1_for_blending, w1, h1);
+    auto blended_image3 = blend_gray8(image3_for_blending, image1_for_blending, image2_for_blending, w1, h1);
+
+    write_png_gray8(images_for_blending_paths_output[0], blended_image1, w1, h1);
+    write_png_gray8(images_for_blending_paths_output[1], blended_image2, w2, h2);
+    write_png_gray8(images_for_blending_paths_output[2], blended_image3, w3, h3);
+}
+
 int main() {
     try {
         task1_circle_mask();
         task1_generating_halftone_circle();
         task2_blending_synthetic_images();
         task2_blending_non_synthetic_images();
+        // ДОБАВЛЕНО
+        task2_blending_images_with_input_mask();
 
         return 0;
     } catch (const std::exception& e) {
